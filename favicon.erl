@@ -1,5 +1,5 @@
 -module(favicon).
--export([start/3, favicon_searcher/1, saver_worker/1]).
+-export([start/3, favicon_searcher/1, saver_worker/1, extract_favicon_url/1]).
 
 start(File_name, Threads_number, Result_file) -> 
     %inet:start(),
@@ -14,7 +14,29 @@ start_thread(Number) ->
     spawn(favicon, favicon_searcher, [self()]),
     start_thread(Number - 1).
 
-extract_favicon_url(Page) -> Page.
+extract_favicon_url(Page) -> 
+    Link = re:run(Page, "<link.*rel.*=.*icon.*>", [ungreedy, caseless]),
+    case Link of
+        nothing -> "";
+        {match, L_link} -> 
+            [Link_pos|_] = L_link,
+            {Link_s, Link_len} = Link_pos,
+            Just_link = binary:part(Page, Link_s, Link_len),
+            Href = re:run(Just_link, "href.*=.*(\"|')(.*\..*)(\"|').*", [ungreedy, caseless]),
+            case Href of
+                nothing -> "";
+                {match, L_href} ->
+                    [Href_pos|_] = L_href,
+                    {Href_s, Href_len} = Href_pos,
+                    binary:part(Just_link, Href_s, Href_len);
+                _Else ->
+                    io:format("Strange href ~w~n", [Href]),
+                    ""
+            end;
+        _Else -> 
+            io:format("Strange <link> ~w~n", [Link]),
+            ""
+    end.
 
 favicon_searcher(Server_PID) -> 
     Server_PID ! {pid, self()},
