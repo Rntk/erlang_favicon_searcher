@@ -1,12 +1,12 @@
 -module(favicon).
 -export([start/2, favicon_searcher/2]).
 
-start(File_name, Threads) -> 
-    start_thread(Threads),
+start(File_name, Threads_number) -> 
+    start_thread(Threads_number),
     {ok, Binary_urls} = file:read_file(File_name),
     Raw_urls = binary:split(Binary_urls, <<"\n">>, [global]),
-    send_urls(Raw_urls).
-    
+    send_urls(Raw_urls, Threads_number).
+
     
 start_thread(0) -> io:format("Spawning done~n", []);
 start_thread(Number) -> 
@@ -28,20 +28,22 @@ favicon_searcher(Server_PID, false) ->
             io:format("Worker ~w is off after waiting ~w ms~n", [self(), Timeout])
     end.
 
-send_urls([]) -> 
+send_urls([], 0) -> 
+    io:format("All done~n", []);
+send_urls([], Threads_number) -> 
     Timeout = 5000,
     receive
         {pid, PID} -> 
             PID ! finish,
-            send_urls([]);
+            send_urls([], Threads_number - 1);
         {PID, Favicon_url} -> 
             PID ! finish,
             save_favicon_url(Favicon_url),
-            send_urls([])
+            send_urls([], Threads_number - 1)
     after Timeout ->
         io:format("Finish after waiting ~w ms~n", [Timeout])
     end;
-send_urls([Raw_url|Raw_urls]) -> 
+send_urls([Raw_url|Raw_urls], Threads_number) -> 
     Url = binary_to_atom(Raw_url, utf8),
     receive
         {pid, PID} -> PID ! {url, Url};
@@ -49,6 +51,6 @@ send_urls([Raw_url|Raw_urls]) ->
             PID ! {url, Url},
             save_favicon_url(Favicon_url)
     end,
-    send_urls(Raw_urls).
+    send_urls(Raw_urls, Threads_number).
 
 save_favicon_url(Url) -> io:format("Save url ~s~n", [Url]).
