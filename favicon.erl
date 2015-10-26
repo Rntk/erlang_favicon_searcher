@@ -14,7 +14,7 @@ start_thread(Number) ->
     start_thread(Number - 1).
 
 favicon_searcher(Server_PID, true) -> 
-    Server_PID ! {self()},
+    Server_PID ! {pid, self()},
     favicon_searcher(Server_PID, false);
 favicon_searcher(Server_PID, false) -> 
     Timeout = 5000,
@@ -31,6 +31,9 @@ favicon_searcher(Server_PID, false) ->
 send_urls([]) -> 
     Timeout = 5000,
     receive
+        {pid, PID} -> 
+            PID ! finish,
+            send_urls([]);
         {PID, Favicon_url} -> 
             PID ! finish,
             save_favicon_url(Favicon_url),
@@ -41,7 +44,7 @@ send_urls([]) ->
 send_urls([Raw_url|Raw_urls]) -> 
     Url = binary_to_atom(Raw_url, utf8),
     receive
-        {PID} -> PID ! {url, Url};
+        {pid, PID} -> PID ! {url, Url};
         {PID, Favicon_url} -> 
             PID ! {url, Url},
             save_favicon_url(Favicon_url)
