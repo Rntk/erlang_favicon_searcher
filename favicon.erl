@@ -1,8 +1,9 @@
 -module(favicon).
--export([start/3, favicon_searcher/1, saver_worker/1, extract_favicon_url/1]).
+-export([start/3, favicon_searcher/1, saver_worker/1, extract_favicon_url/1, process_page/1]).
 
 start(File_name, Threads_number, Result_file) -> 
-    %inet:start(),
+    ssl:start(),
+    inets:start(),
     register(saver, spawn(favicon, saver_worker, [Result_file])),
     start_thread(Threads_number),
     {ok, Binary_urls} = file:read_file(File_name),
@@ -17,25 +18,36 @@ start_thread(Number) ->
 extract_favicon_url(Page) -> 
     Link = re:run(Page, "<link.*rel.*=.*icon.*>", [ungreedy, caseless]),
     case Link of
-        nothing -> "";
         {match, L_link} -> 
             [Link_pos|_] = L_link,
             {Link_s, Link_len} = Link_pos,
-            Just_link = binary:part(Page, Link_s, Link_len),
-            Href = re:run(Just_link, "href.*=.*(\"|')(.*\..*)(\"|').*", [ungreedy, caseless]),
+            %Just_link = binary:part(Page, Link_s, Link_len),
+            Just_link = string:substr(Page, Link_s, Link_len),
+            Href = re:run(Just_link, "href.*=.*(\"|')(.*\..*)(\"|')", [ungreedy, caseless]),
             case Href of
-                nothing -> "";
                 {match, L_href} ->
-                    [Href_pos|_] = L_href,
+                    [_, _, Href_pos|_] = L_href,
                     {Href_s, Href_len} = Href_pos,
-                    binary:part(Just_link, Href_s, Href_len);
-                _Else ->
-                    io:format("Strange href ~w~n", [Href]),
-                    ""
+                    %{ok, binary:part(Just_link, Href_s, Href_len)}
+                    {ok, string:substr(Just_link, Href_s + 1, Href_len)};
+                _ -> {error, nothing}
             end;
-        _Else -> 
-            io:format("Strange <link> ~w~n", [Link]),
-            ""
+        _ -> {error, nothing}
+    end.
+
+process_page(Url) -> 
+    Response = httpc:request(Url),
+    case Response of
+        {ok, {{_, Code, _}, _, Page}} when Code == 200 -> 
+            Favicon_result = extract_favicon_url(Page),
+            case Favicon_result of
+                {ok, _} -> Favicon_result;
+                {error, nothing} -> {error, Url}
+            end;
+        {error, Reason} -> 
+            io:format("Not loaded: ~s. Reason ~w~n", [Url, Reason]),
+            {error, Url};
+        _ -> {error, Url}
     end.
 
 favicon_searcher(Server_PID) -> 
@@ -45,10 +57,8 @@ favicon_searcher(Server_PID) ->
         finish -> io:format("Worker ~w is off~n", [self()]);
         {url, Url} -> 
             io:format("Process ~s ~n", [Url]),
-            %Page = httpc:request(Url),
-            Page = Url,
-            Favicon_url = extract_favicon_url(Page),
-            saver ! {url, Favicon_url},
+            {Result, Favicon_url} = process_page(Url),
+            saver ! {url, Result, Favicon_url},
             favicon_searcher(Server_PID)
         after Timeout ->
             io:format("Worker ~w is off after waiting ~w ms~n", [self(), Timeout])
@@ -76,8 +86,11 @@ send_urls([Raw_url|Raw_urls], Threads_number) ->
 saver_worker(Result_file) ->
     receive
         finish -> io:format("Saver is off~n", []);
-        {url, Url} -> 
+        {url, ok, Url} -> 
             save_favicon_url(Url, Result_file),
+            saver_worker(Result_file);
+        {url, error, Url} -> 
+            save_favicon_url(Url, "bad_" ++ Result_file),
             saver_worker(Result_file)
     end.
 
@@ -86,4 +99,5 @@ save_favicon_url(Url, Result_file) ->
     case Writed of
         ok -> io:format("Saved url: ~s~n", [Url]);
         {error, Reason} -> io:format("Not saved url: ~s. Reason ~w~n", [Url, Reason])
-    end.
+    end,
+    Writed.
