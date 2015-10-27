@@ -1,10 +1,11 @@
 -module(favicon).
--export([start/3, favicon_searcher/1, saver_worker/1, extract_favicon_url/1, process_page/1]).
+-export([start/3, favicon_searcher/1, saver_worker/1, extract_favicon_url/1, process_page/1, process_favicon_url/2]).
 
 start(File_name, Threads_number, Result_file) -> 
     ssl:start(),
     inets:start(),
-    register(saver, spawn(favicon, saver_worker, [Result_file])),
+    Saver_PID = spawn(favicon, saver_worker, [Result_file]),
+    register(saver, Saver_PID),
     start_thread(Threads_number),
     {ok, Binary_urls} = file:read_file(File_name),
     Raw_urls = binary:split(Binary_urls, <<"\n">>, [global]),
@@ -35,13 +36,31 @@ extract_favicon_url(Page) ->
         _ -> {error, nothing}
     end.
 
+process_favicon_url(Favicon_url, Url) -> 
+    case Favicon_url of
+        [47, 47|Clear_favicon_url] ->
+            Math = re:run(Url, "^(http.*://)", [ungreedy, caseless]),
+            case Math of
+                {match, Positions} -> 
+                    [_, {Scheme_s, Scheme_len}|_] = Positions,
+                    Scheme = string:substr(Url, Scheme_s + 1, Scheme_len),
+                    Scheme ++ Clear_favicon_url;
+                _ -> 
+                    io:format("else~n", []),
+                    Url ++ Clear_favicon_url
+             end;
+        [47|_] -> 
+            Url ++ Favicon_url;
+        _ -> Favicon_url
+    end.
+
 process_page(Url) -> 
     Response = httpc:request(Url),
     case Response of
         {ok, {{_, Code, _}, _, Page}} when Code == 200 -> 
             Favicon_result = extract_favicon_url(Page),
             case Favicon_result of
-                {ok, _} -> Favicon_result;
+                {ok, Favicon_url} -> {ok, process_favicon_url(Favicon_url, Url)};
                 {error, nothing} -> {error, Url}
             end;
         {error, Reason} -> 
@@ -84,6 +103,7 @@ send_urls([Raw_url|Raw_urls], Threads_number) ->
     send_urls(Raw_urls, Threads_number).
 
 saver_worker(Result_file) ->
+    Timeout = 60000,
     receive
         finish -> io:format("Saver is off~n", []);
         {url, ok, Url} -> 
@@ -92,6 +112,8 @@ saver_worker(Result_file) ->
         {url, error, Url} -> 
             save_favicon_url(Url, "bad_" ++ Result_file),
             saver_worker(Result_file)
+        after Timeout ->
+            io:format("Saver finish after waiting ~w ms~n", [Timeout])
     end.
 
 save_favicon_url(Url, Result_file) -> 
