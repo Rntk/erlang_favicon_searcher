@@ -17,16 +17,14 @@ start_thread(Number) ->
     start_thread(Number - 1).
 
 extract_favicon_url(Page) -> 
-    Link = re:run(Page, "(<link.*rel.*=.*icon.*\.(png|ico|jp.*g|gif).*>|<link.*\.(png|ico|jp.*g|gif).*rel.*=.*icon.*>)", [ungreedy, caseless]),
-    io:format("~w~n", [Link]),
+    Link = re:run(Page, "<link.*rel[\s]*=[\s]*(\"|').*icon(\"|').*>", [ungreedy, caseless]),
     case Link of
         {match, L_link} -> 
             [Link_pos|_] = L_link,
             {Link_s, Link_len} = Link_pos,
             %Just_link = binary:part(Page, Link_s, Link_len),
             Just_link = string:substr(Page, Link_s, Link_len),
-            io:format("~s~n", [Just_link]),
-            Href = re:run(Just_link, "href.*=.*(\"|')(.*\..*)(\"|')", [ungreedy, caseless]),
+            Href = re:run(Just_link, "href[\s]*=[\s]*(\"|')([0-9a-zA-Z:/\.%_-]*\.(png|jp.*g|ico|gif).*)(\"|')", [ungreedy, caseless]),
             case Href of
                 {match, L_href} ->
                     [_, _, Href_pos|_] = L_href,
