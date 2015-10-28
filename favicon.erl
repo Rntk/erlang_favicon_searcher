@@ -17,13 +17,15 @@ start_thread(Number) ->
     start_thread(Number - 1).
 
 extract_favicon_url(Page) -> 
-    Link = re:run(Page, "<link.*rel.*=.*icon.*>", [ungreedy, caseless]),
+    Link = re:run(Page, "(<link.*rel.*=.*icon.*\.(png|ico|jp.*g|gif).*>|<link.*\.(png|ico|jp.*g|gif).*rel.*=.*icon.*>)", [ungreedy, caseless]),
+    io:format("~w~n", [Link]),
     case Link of
         {match, L_link} -> 
             [Link_pos|_] = L_link,
             {Link_s, Link_len} = Link_pos,
             %Just_link = binary:part(Page, Link_s, Link_len),
             Just_link = string:substr(Page, Link_s, Link_len),
+            io:format("~s~n", [Just_link]),
             Href = re:run(Just_link, "href.*=.*(\"|')(.*\..*)(\"|')", [ungreedy, caseless]),
             case Href of
                 {match, L_href} ->
@@ -51,22 +53,28 @@ process_favicon_url(Favicon_url, Url) ->
              end;
         [47|_] -> 
             Url ++ Favicon_url;
-        _ -> Favicon_url
+        _ ->
+            Math = re:run(Favicon_url, "^http.*://", [ungreedy, caseless]),
+            case Math of
+                {match, _} -> Favicon_url;
+                _ -> Url ++ "/" ++ Favicon_url
+            end
     end.
 
 process_page(Url) -> 
     Response = httpc:request(Url),
     case Response of
-        {ok, {{_, Code, _}, _, Page}} when Code == 200 -> 
+        {ok, {{_, 200, _}, _, Page}} -> 
             Favicon_result = extract_favicon_url(Page),
             case Favicon_result of
                 {ok, Favicon_url} -> {ok, process_favicon_url(Favicon_url, Url)};
-                {error, nothing} -> {error, Url}
+                {error, nothing} -> {error, Url, not_found_favicon}
             end;
+        {ok, {Status_line, _, _}} -> {error, Url, Status_line};
         {error, Reason} -> 
             io:format("Not loaded: ~s. Reason ~w~n", [Url, Reason]),
-            {error, Url};
-        _ -> {error, Url}
+            {error, Url, Reason};
+        _ -> {error, Url, unknown}
     end.
 
 favicon_searcher(Server_PID) -> 
@@ -76,8 +84,11 @@ favicon_searcher(Server_PID) ->
         finish -> io:format("Worker ~w is off~n", [self()]);
         {url, Url} -> 
             io:format("Process ~s ~n", [Url]),
-            {Result, Favicon_url} = process_page(Url),
-            saver ! {url, Result, Favicon_url},
+            Processing_result = process_page(Url),
+            case Processing_result of
+                {ok, Favicon_url} -> saver ! {url, ok, Favicon_url};
+                {error, Favicon_url, Reason} -> saver ! {url, error, Favicon_url, Reason}
+            end,
             favicon_searcher(Server_PID)
         after Timeout ->
             io:format("Worker ~w is off after waiting ~w ms~n", [self(), Timeout])
@@ -87,7 +98,7 @@ send_urls([], 0) ->
     saver ! finish,
     io:format("All done~n", []);
 send_urls([], Threads_number) -> 
-    Timeout = 5000,
+    Timeout = 60000,
     receive
         {pid, PID} -> 
             PID ! finish,
@@ -109,8 +120,8 @@ saver_worker(Result_file) ->
         {url, ok, Url} -> 
             save_favicon_url(Url, Result_file),
             saver_worker(Result_file);
-        {url, error, Url} -> 
-            save_favicon_url(Url, "bad_" ++ Result_file),
+        {url, error, Url, Reason} -> 
+            save_favicon_url(Url ++ io_lib:format(" - ~w", [Reason]), "bad_" ++ Result_file),
             saver_worker(Result_file)
         after Timeout ->
             io:format("Saver finish after waiting ~w ms~n", [Timeout])
