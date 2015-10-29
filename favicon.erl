@@ -37,25 +37,23 @@ extract_favicon_url(Page) ->
     end.
 
 process_favicon_url(Favicon_url, Url) -> 
+    case lists:reverse(Url) of
+        [$/|_] -> Slash = "";
+        _ -> Slash = "/"
+    end,
     case Favicon_url of
-        [47, 47|Clear_favicon_url] ->
-            Math = re:run(Url, "^(http.*://)", [ungreedy, caseless]),
-            case Math of
-                {match, Positions} -> 
-                    [_, {Scheme_s, Scheme_len}|_] = Positions,
-                    Scheme = string:substr(Url, Scheme_s + 1, Scheme_len),
-                    Scheme ++ Clear_favicon_url;
-                _ -> 
-                    io:format("else~n", []),
-                    Url ++ Clear_favicon_url
-             end;
-        [47|_] -> 
-            Url ++ Favicon_url;
-        _ ->
-            Math = re:run(Favicon_url, "^http.*://", [ungreedy, caseless]),
-            case Math of
-                {match, _} -> Favicon_url;
-                _ -> Url ++ "/" ++ Favicon_url
+        [$/, $/|Clear_favicon_url] ->
+            case Url of
+                [$h, $t, $t, $p, $:|_] -> "http://" ++ Clear_favicon_url;
+                [$h, $t, $t, $p, $s, $:|_] -> "https://" ++ Clear_favicon_url;
+                _ -> Url ++ Slash ++ Clear_favicon_url
+            end;
+        [$/|Clear_favicon_url] -> Url ++ Slash ++ Clear_favicon_url;
+        _ -> 
+            case Favicon_url of
+                [$h, $t, $t, $p, $:|_] -> Favicon_url;
+                [$h, $t, $t, $p, $s, $:|_] -> Favicon_url;
+                _ -> Url ++ Slash ++ Favicon_url
             end
     end.
 
