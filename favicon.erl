@@ -1,4 +1,5 @@
 -module(favicon).
+-compile(export_all).
 -export([start/3, favicon_searcher/1, saver_worker/1, extract_favicon_url/1, process_page/1, process_favicon_url/2]).
 
 start(File_name, Threads_number, Result_file) -> 
@@ -36,23 +37,26 @@ extract_favicon_url(Page) ->
         _ -> {error, nothing}
     end.
 
+slash(Url) ->
+    case lists:last(Url) of
+        $/ -> "";
+        _ -> "/"
+    end.
+
 process_favicon_url(Favicon_url, Url) -> 
-    case lists:reverse(Url) of
-        [$/|_] -> Slash = "";
-        _ -> Slash = "/"
-    end,
+    Slash = slash(Url),
     case Favicon_url of
         [$/, $/|Clear_favicon_url] ->
             case Url of
-                [$h, $t, $t, $p, $:|_] -> "http://" ++ Clear_favicon_url;
-                [$h, $t, $t, $p, $s, $:|_] -> "https://" ++ Clear_favicon_url;
+                ["http:" ++ _] -> "http://" ++ Clear_favicon_url;
+                ["https:" ++ _] -> "https://" ++ Clear_favicon_url;
                 _ -> Url ++ Slash ++ Clear_favicon_url
             end;
         [$/|Clear_favicon_url] -> Url ++ Slash ++ Clear_favicon_url;
         _ -> 
             case Favicon_url of
-                [$h, $t, $t, $p, $:|_] -> Favicon_url;
-                [$h, $t, $t, $p, $s, $:|_] -> Favicon_url;
+                ["http:" ++ _] -> Favicon_url;
+                ["https:" ++ _] -> Favicon_url;
                 _ -> Url ++ Slash ++ Favicon_url
             end
     end.
