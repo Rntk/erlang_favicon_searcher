@@ -5,17 +5,20 @@
 start(File_name, Threads_number, Result_file) -> 
     {ok, Binary_urls} = file:read_file(File_name),
     Raw_urls = binary:split(Binary_urls, [<<"\r">>, <<"\n">>], [global, trim_all]),
+    io:format("Was load ~w urls~n", [length(Raw_urls)]),
     ssl:start(),
     inets:start(),
-    Saver_PID = spawn(favicon, saver_worker, [Result_file]),
-    register(saver, Saver_PID),
-    start_thread(Threads_number),
+    start_saver(Result_file),
+    start_searcher(Threads_number),
     send_urls(Raw_urls, Threads_number).
-    
-start_thread(0) -> io:format("Spawning done~n", []);
-start_thread(Number) -> 
+
+start_saver(Result_file) -> 
+    register(saver, spawn(favicon, saver_worker, [Result_file])).
+
+start_searcher(0) -> io:format("Spawning done~n", []);
+start_searcher(Number) -> 
     spawn(favicon, favicon_searcher, [self()]),
-    start_thread(Number - 1).
+    start_searcher(Number - 1).
 
 extract_favicon_url(Page) -> 
     Link = re:run(Page, "<link.*rel[\s]*=[\s]*(\"|').*icon(\"|').*>", [ungreedy, caseless]),
@@ -69,7 +72,7 @@ process_page(Url) ->
             end;
         {ok, {Status_line, _, _}} -> {error, Url, Status_line};
         {error, Reason} -> 
-            io:format("Not loaded: ~s. Reason ~w~n", [Url, Reason]),
+            %io:format("Not loaded: ~s. Reason ~p~n", [Url, Reason]),
             {error, Url, Reason};
         _ -> {error, Url, unknown}
     end.
@@ -80,7 +83,7 @@ favicon_searcher(Server_PID) ->
     receive
         finish -> io:format("Worker ~w is off~n", [self()]);
         {url, Url} -> 
-            io:format("Process ~s ~n", [Url]),
+            %io:format("Process ~s ~n", [Url]),
             Processing_result = process_page(Url),
             case Processing_result of
                 {ok, Favicon_url} -> saver ! {url, ok, Favicon_url};
@@ -106,7 +109,13 @@ send_urls([], Threads_number) ->
 send_urls([Raw_url|Raw_urls], Threads_number) -> 
     Url = binary:bin_to_list(Raw_url),
     receive
-        {pid, PID} -> PID ! {url, Url}
+        {pid, PID} -> 
+            PID ! {url, Url},
+            Len = length(Raw_urls),
+            if 
+                Len rem 100 =:= 0 -> io:format("Left ~w urls~n", [Len]);
+                true -> ok
+            end
     end,
     send_urls(Raw_urls, Threads_number).
 
@@ -127,7 +136,7 @@ saver_worker(Result_file) ->
 save_favicon_url(Url, Result_file) -> 
     Writed = file:write_file(Result_file, list_to_binary(Url ++ "\n"), [append]),
     case Writed of
-        ok -> io:format("Saved url: ~s~n", [Url]);
-        {error, Reason} -> io:format("Not saved url: ~s. Reason ~w~n", [Url, Reason])
+        ok -> ok;%io:format("Saved url: ~s~n", [Url]);
+        {error, Reason} -> io:format("Not saved url: ~s. Reason ~p~n", [Url, Reason])
     end,
     Writed.
