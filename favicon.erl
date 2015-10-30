@@ -9,7 +9,7 @@ start(File_name, Threads_number, Result_file) ->
     register(saver, Saver_PID),
     start_thread(Threads_number),
     {ok, Binary_urls} = file:read_file(File_name),
-    Raw_urls = binary:split(Binary_urls, <<"\n">>, [global]),
+    Raw_urls = binary:split(Binary_urls, [<<"\r\n">>, <<"\n">>], [global]),
     send_urls(Raw_urls, Threads_number).
     
 start_thread(0) -> io:format("Spawning done~n", []);
@@ -55,7 +55,7 @@ process_favicon_url(Favicon_url, Url) ->
         [$/|Clear_favicon_url] -> Url ++ Slash ++ Clear_favicon_url;
         "http:" ++ _ -> Favicon_url;
         "https:" ++ _ -> Favicon_url;
-        _ -> io:format("yo~n", []), Url ++ Slash ++ Favicon_url
+        _ -> Url ++ Slash ++ Favicon_url
     end.
 
 process_page(Url) -> 
@@ -113,13 +113,13 @@ send_urls([Raw_url|Raw_urls], Threads_number) ->
 saver_worker(Result_file) ->
     Timeout = 10000,
     receive
-        finish -> io:format("Saver is off~n", []);
         {url, ok, Url} -> 
             save_favicon_url(Url, Result_file),
             saver_worker(Result_file);
         {url, error, Url, Reason} -> 
             save_favicon_url(Url ++ io_lib:format(" - ~w", [Reason]), "bad_" ++ Result_file),
-            saver_worker(Result_file)
+            saver_worker(Result_file);
+        finish -> io:format("Saver is off~n", [])
         after Timeout ->
             io:format("Saver finish after waiting ~w ms~n", [Timeout])
     end.
