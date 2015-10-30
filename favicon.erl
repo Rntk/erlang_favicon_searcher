@@ -48,21 +48,18 @@ process_favicon_url(Favicon_url, Url) ->
     case Favicon_url of
         [$/, $/|Clear_favicon_url] ->
             case Url of
-                ["http:" ++ _] -> "http://" ++ Clear_favicon_url;
-                ["https:" ++ _] -> "https://" ++ Clear_favicon_url;
+                "http:" ++ _ -> "http://" ++ Clear_favicon_url;
+                "https:" ++ _ -> "https://" ++ Clear_favicon_url;
                 _ -> Url ++ Slash ++ Clear_favicon_url
             end;
         [$/|Clear_favicon_url] -> Url ++ Slash ++ Clear_favicon_url;
-        _ -> 
-            case Favicon_url of
-                ["http:" ++ _] -> Favicon_url;
-                ["https:" ++ _] -> Favicon_url;
-                _ -> Url ++ Slash ++ Favicon_url
-            end
+        "http:" ++ _ -> Favicon_url;
+        "https:" ++ _ -> Favicon_url;
+        _ -> io:format("yo~n", []), Url ++ Slash ++ Favicon_url
     end.
 
 process_page(Url) -> 
-    Response = httpc:request(Url),
+    Response = httpc:request(get, {Url, []}, [{timeout, 5000}], [{sync, true}]),
     case Response of
         {ok, {{_, 200, _}, _, Page}} -> 
             Favicon_result = extract_favicon_url(Page),
@@ -114,7 +111,7 @@ send_urls([Raw_url|Raw_urls], Threads_number) ->
     send_urls(Raw_urls, Threads_number).
 
 saver_worker(Result_file) ->
-    Timeout = 60000,
+    Timeout = 10000,
     receive
         finish -> io:format("Saver is off~n", []);
         {url, ok, Url} -> 
