@@ -3,13 +3,13 @@
 -export([start/3, favicon_searcher/1, saver_worker/1, extract_favicon_url/1, process_page/1, process_favicon_url/2]).
 
 start(File_name, Threads_number, Result_file) -> 
+    {ok, Binary_urls} = file:read_file(File_name),
+    Raw_urls = binary:split(Binary_urls, [<<"\r">>, <<"\n">>], [global, trim_all]),
     ssl:start(),
     inets:start(),
     Saver_PID = spawn(favicon, saver_worker, [Result_file]),
     register(saver, Saver_PID),
     start_thread(Threads_number),
-    {ok, Binary_urls} = file:read_file(File_name),
-    Raw_urls = binary:split(Binary_urls, [<<"\r\n">>, <<"\n">>], [global]),
     send_urls(Raw_urls, Threads_number).
     
 start_thread(0) -> io:format("Spawning done~n", []);
